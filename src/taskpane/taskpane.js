@@ -154,10 +154,19 @@ async function sendToAI() {
     appendChat("User", prompt);
     promptInput.value = "";
 
+    const systemInstructions = `
+    System Prompt:
+    - If response contains any codes or formulas, format them in a markdown code block using three backticks (\`\`\`) instead of single backtick (\`)
+    - Priority for solutions: 
+    1. Standard Excel UI operations (Menus/Ribbon/Keyboard shortcuts).
+    2. Excel Functions/Formulas.
+    3. VBA Scripts (only if the above cannot solve it).
+    `;
+    
     // Combine context and prompt
     const fullPrompt = excelContext 
-        ? `Context from Excel sheet:\n${excelContext}\n\nUser Question: ${prompt}`
-        : prompt;
+        ? `Context from Excel sheet:\n${excelContext}\n\nUser Question: ${prompt}\n\n${systemInstructions}`
+        : `${prompt}\n\n${systemInstructions}`;
 
     try {
         // CORRECTED URL
@@ -222,7 +231,49 @@ function appendChat(role, text) {
     const history = document.getElementById("chat-history");
     const msg = document.createElement("div");
     msg.className = role.toLowerCase();
-    msg.innerHTML = `<strong>${role}:</strong> ${text.replace(/\n/g, '<br>')}`;
+
+    // msg.innerHTML = `<strong>${role}:</strong> ${text.replace(/\n/g, '<br>')}`;
+    const codeBlockRegex = /```(?:[\w-]+)?\n?([\s\S]*?)```|`([^`\n]+)`/g;
+    if (role === "AI") {
+        // Regex to find code blocks: ```code```
+        let formattedText = text.replace(codeBlockRegex, (match, code) => {
+            const cleanCode = code.trim().replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            return `
+                <div class="code-block-container">
+                    <pre><code>${code.trim()}</code></pre>
+                    <button class="apply-btn" onclick="applyToExcel('${cleanCode}')">
+                        Add
+                    </button>
+                </div>`;
+        });
+        msg.innerHTML = `<strong>AI:</strong><br>${formattedText.replace(/\n/g, '<br>')}`;
+    } else {
+        msg.innerHTML = `<strong>${role}:</strong> ${text}`;
+    }
+    
     history.appendChild(msg);
     history.scrollTop = history.scrollHeight;
 }
+
+async function applyToExcel(code) {
+    try {
+        await Excel.run(async (context) => {
+            const range = context.workbook.getSelectedRange();
+            
+            // If the code starts with '=', treat it as a formula, otherwise as text
+            if (code.startsWith("=")) {
+                range.formulas = [[code]];
+            } else {
+                range.values = [[code]];
+            }
+            
+            await context.sync();
+        });
+    } catch (error) {
+        console.error("Error applying to Excel: ", error);
+        // Optional: show error in the chat
+        appendChat("Error", "Could not apply to cell: " + error.message);
+    }
+}
+
+window.applyToExcel = applyToExcel;

@@ -9,21 +9,23 @@ npm install dotenv --save-dev
 ```
 
 ## Testing
-1. Test command
+1. Update your OpenRouter API key in .env
+2. Test command
 ```shell
 cd ExcelAI
 npm start
 ```
-2. Test data
+3. Test data
 Put below text into column A1
 ```
 predict: 7,14,21,28,35
 ```
-3. Test prompt in ExcelAI
+4. Select your preferred model
+5. Test prompt in ExcelAI
 ```
 in column B, extract 5 numbers at the end of column A's content, including comma. Then put those 5 numbers into column C to G.
 ```
-4. Test result
+6. Test result
 Refer to the screenshot [test result](sample/test_result.png)
 
 ## Debug
