@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <!-- DO NOT CHANGE THIS URL - It is required for the add-in to work, MUST BE FIRST -->
+    <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Excel AI Bar</title>
+    <style>
+        /* Basic CSS to make it usable */
+        body { font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; margin: 0; }
+        #chat-history { flex: 1; overflow-y: auto; padding: 10px; border-bottom: 1px solid #ccc; }
+        .footer { padding: 10px; background: #f3f3f3; }
+        .input-area { display: flex; gap: 5px; margin-top: 5px; }
+        input { flex: 1; }
+        .user { color: blue; margin-bottom: 10px; }
+        .ai { color: green; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div id="app-body" style="display: flex; flex-direction: column; height: 100vh;">
+        <header style="padding: 10px; border-bottom: 1px solid #ccc;">
+            <button id="new-chat">＋ New Chat</button>
+        </header>
+
+        <main id="chat-history"></main>
+
+        <div id="sideload-msg" style="display: none;">
+            <p>You are running the add-in in sideload mode. The add-in is not loaded in Excel yet.</p>
+        </div>
+
+        <footer class="footer">
+            <select id="model-select" style="width: 100%;">
+                <option value="x-ai/grok-4.1-fast">Grok-4.1-fast</option>
+                <option value="openai/gpt-oss-120b">gpt-oss-120b</option>
+                <option value="deepseek/deepseek-v3.2">deepseek-v3.2</option>
+                <option value="qwen/qwen3.5-35b-a3b">Qwen3.5-35b-a3b</option>
+                <option value="minimax/minimax-m2.5">minimax-m2.5</option>
+                <option value="z-ai/glm-5">glm-5</option>
+                <option value="moonshotai/kimi-k2.5">kimi-k2.5</option>
+                <option value="stepfun/step-3.5-flash:free">step-3.5-flash</option>
+                <option value="nvidia/nemotron-3-super-120b-a12b:free">nemotron-3-super-120b-a12b</option>
+            </select>
+            <div class="input-area">
+                <input type="text" id="user-prompt" placeholder="Ask AI Bar...">
+                <button id="send-btn">Send</button>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>

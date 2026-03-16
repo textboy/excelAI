@@ -1,0 +1,19 @@
+# Environment variables
+.env
+
+# Dependency directories
+node_modules/
+
+# Build output
+dist/
+build/
+
+# system files
+.git
+.vscode/
+.DS_Store
+Thumbs.db
+
+# others
+*.log
+*.log*
