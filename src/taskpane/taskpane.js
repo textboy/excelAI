@@ -117,6 +117,7 @@ async function sendToAI() {
     const sendBtn = document.getElementById("send-btn");
     const prompt = promptInput.value;
     const model = document.getElementById("model-select").value;
+    const chatHistory = document.getElementById("chat-history");
     const apiKey = process.env.OPENROUTER_API_KEY;
 
     if (!prompt) {
@@ -135,6 +136,8 @@ async function sendToAI() {
             // Convert 2D array of values into a readable string
             const values = range.values;
             excelContext = values.map(row => row.join("\t")).join("\n");
+            console.log("--- DEBUG: Excel Context Data ---");
+            console.log(excelContext || "[Empty Selection]");
         });
     } catch (error) {
         console.warn("Could not read Excel selection:", error);
@@ -154,9 +157,21 @@ async function sendToAI() {
     appendChat("User", prompt);
     promptInput.value = "";
 
+    // Add "Thinking..." indicator
+    const thinkingMsg = document.createElement("div");
+    thinkingMsg.className = "ai thinking-mode";
+    thinkingMsg.innerHTML = "<em>AI is thinking...</em>";
+    chatHistory.appendChild(thinkingMsg);
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+    thinkingFlag = true;
+
     const systemInstructions = `
-    System Prompt:
-    - If response contains any codes or formulas, format them in a markdown code block using three backticks (\`\`\`) instead of single backtick (\`)
+    You are an expert Microsoft Excel assistant with deep knowledge of formulas, functions, pivot tables, charts, macros, and data analysis.
+    You can provide easy to follow instructions for users.
+    You can generate Excel formulas, VBA scripts, and provide instructions for using Excel's features.
+    When giving formulas, ensure they are syntactically correct and optimized for performance.
+    - If providing an Excel formula, wrap it in \`\`\`excel blocks.
+    - If providing VBA code, wrap it in \`\`\`vba blocks.
     - Priority for solutions: 
     1. Standard Excel UI operations (Menus/Ribbon/Keyboard shortcuts).
     2. Excel Functions/Formulas.
@@ -165,8 +180,8 @@ async function sendToAI() {
     
     // Combine context and prompt
     const fullPrompt = excelContext 
-        ? `Context from Excel sheet:\n${excelContext}\n\nUser Question: ${prompt}\n\n${systemInstructions}`
-        : `${prompt}\n\n${systemInstructions}`;
+        ? `Context from Excel sheet:\n${excelContext}\n\nUser Question: ${prompt}`
+        : `${prompt}`;
 
     try {
         // CORRECTED URL
@@ -176,50 +191,65 @@ async function sendToAI() {
                 "Authorization": `Bearer ${apiKey}`,
                 "Content-Type": "application/json",
                 "HTTP-Referer": "http://localhost:3000", // Required by some OpenRouter models
-                "X-Title": "Excel AI Bar"
+                "X-Title": "ExcelAI"
             },
             body: JSON.stringify({
                 model: model,
-                messages: [{ role: "user", content: fullPrompt }]
+                stream: true,  // Enable streaming responses
+                messages: [
+                    { role: "system", content: systemInstructions },
+                    { role: "user", content: fullPrompt }
+                ]
             })
         });
 
         // Check if response is ok
         if (!response.ok) {
-            // Try to get detailed error information from the response
-            let errorText = `HTTP error! status: ${response.status}`;
-            try {
-                const errorData = await response.json();
-                if (errorData.detail) {
-                    errorText += ` - ${errorData.detail}`;
-                } else if (errorData.error) {
-                    errorText += ` - ${errorData.error}`;
-                }
-            } catch (e) {
-                // If we can't parse JSON, just use the status text
-                errorText += ` - ${response.statusText}`;
-            }
-            throw new Error(errorText);
+            // NOTE: Only call .json() here because the stream hasn't been started yet
+            const errorData = await response.json();
+            throw new Error(errorData.error?.message || `HTTP ${response.status}`);
         }
 
-        const data = await response.json();
-        
-        if (data.choices && data.choices[0]) {
-            appendChat("AI", data.choices[0].message.content);
-        } else {
-            appendChat("Error", "Unexpected API response format.");
+        // PROCESS THE READABLE STREAM
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let fullText = "";
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value);
+            const lines = chunk.split("\n");
+            
+            for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                    const data = line.slice(6);
+                    if (data === "[DONE]") break;
+                    try {
+                        const json = JSON.parse(data);
+                        const content = json.choices[0].delta.content || "";
+                        if (content) { // CRITICAL: Only update if content exists
+                            if (thinkingFlag === true) {
+                                // Remove thinking indicator as data starts arriving
+                                if (chatHistory.contains(thinkingMsg)) chatHistory.removeChild(thinkingMsg);
+                                thinkingFlag = false;
+                            }
+                            fullText += content;
+                            // CALL 1: Streaming update (fast, no buttons yet)
+                            appendChat("AI", fullText, false); 
+                        }
+                    } catch (e) { /* Ignore partial JSON chunks */ }
+                }
+            }
         }
+        // CALL 2: Final cleanup (processes Markdown and adds buttons)
+        appendChat("AI", fullText, true);
+
     } catch (error) {
+        if (chatHistory.contains(thinkingMsg)) chatHistory.removeChild(thinkingMsg);
         console.error("Error in sendToAI:", error);
-        // Provide more detailed error information
-        let errorMessage = `Failed to connect to AI: ${error.message || 'Unknown error'}`;
-        
-        // If it's a network error, provide additional context
-        if (error.name === 'TypeError') {
-            errorMessage = "Network error - please check your internet connection and try again.";
-        }
-        
-        appendChat("Error", errorMessage);
+        appendChat("Error", error.message);
     } finally {
         // Re-enable button and restore text
         sendBtn.disabled = false;
@@ -227,33 +257,97 @@ async function sendToAI() {
     }
 }
 
-function appendChat(role, text) {
-    const history = document.getElementById("chat-history");
-    const msg = document.createElement("div");
-    msg.className = role.toLowerCase();
+/**
+ * Combined chat function to handle user messages, AI streaming, and final rendering.
+ * @param {string} role - "User", "AI", or "Error"
+ * @param {string} text - The content to display
+ * @param {boolean} isFinal - If true, applies Markdown formatting and "Add" buttons
+ */
+function appendChat(role, text, isFinal = false) {
+    const chatHistory = document.getElementById("chat-history");
+    let msgDiv = chatHistory.querySelector(".ai.streaming-active");
 
-    // msg.innerHTML = `<strong>${role}:</strong> ${text.replace(/\n/g, '<br>')}`;
-    const codeBlockRegex = /```(?:[\w-]+)?\n?([\s\S]*?)```|`([^`\n]+)`/g;
-    if (role === "AI") {
-        // Regex to find code blocks: ```code```
-        let formattedText = text.replace(codeBlockRegex, (match, code) => {
-            const cleanCode = code.trim().replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-            return `
-                <div class="code-block-container">
-                    <pre><code>${code.trim()}</code></pre>
-                    <button class="apply-btn" onclick="applyToExcel('${cleanCode}')">
-                        Add
-                    </button>
-                </div>`;
-        });
-        msg.innerHTML = `<strong>AI:</strong><br>${formattedText.replace(/\n/g, '<br>')}`;
-    } else {
-        msg.innerHTML = `<strong>${role}:</strong> ${text}`;
+    // If it's a new message (User, Error, or start of AI response)
+    if (!msgDiv || role !== "AI") {
+        msgDiv = document.createElement("div");
+        msgDiv.className = role.toLowerCase();
+        if (role === "AI") msgDiv.classList.add("streaming-active");
+        chatHistory.appendChild(msgDiv);
     }
-    
-    history.appendChild(msg);
-    history.scrollTop = history.scrollHeight;
+
+    if (role === "User") {
+        msgDiv.innerHTML = `<strong>You:</strong> ${text}`;
+    } 
+    else if (role === "Error") {
+        msgDiv.innerHTML = `<strong>Error:</strong> <span style="color:red;">${text}</span>`;
+    } 
+    else if (role === "AI") {
+        if (!isFinal) {
+            // PROGRESSIVE STREAMING: Quick update with simple line breaks
+            msgDiv.innerHTML = `<strong>AI:</strong><br>${text.replace(/\n/g, '<br>')}`;
+        } else {
+            // FINAL RENDER: Apply Regex for code blocks and "Add" buttons
+            msgDiv.classList.remove("streaming-active");
+            
+            const codeBlockRegex = /```(?:([\w-]+))?\n?([\s\S]*?)```|`([^`\n]+)`/g;
+            
+            const formattedText = text.replace(codeBlockRegex, (match, lang, blockCode, inlineCode) => {
+                const code = (blockCode || inlineCode).trim();
+                const cleanCode = code.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+                const displayLang = lang || (code.startsWith('=') ? 'excel' : 'vba');
+
+                let actionButton = "";
+                if (displayLang === "vba") {
+                    // VBA Block: Show Copy Button
+                    actionButton = `<button class="apply-btn" style="background-color: #666;" onclick="copyToClipboard('${cleanCode}')">Copy VBA</button>`;
+                } else {
+                    // Excel/Formula Block: Show Add to Excel Button
+                    actionButton = `<button class="apply-btn" onclick="applyToExcel('${cleanCode}')">Add to Excel</button>`;
+                }
+
+                return `
+                    <div class="code-block-container">
+                        <div style="font-size:0.7em; color:#aaa; margin-bottom:4px; text-transform:uppercase;">${displayLang}</div>
+                        <pre><code>${code}</code></pre>
+                        ${actionButton}
+                    </div>`;
+            });
+            
+            msgDiv.innerHTML = `<strong>AI:</strong><br>${formattedText.replace(/\n/g, '<br>')}`;
+        }
+    }
+
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+    return msgDiv;
 }
+
+/**
+ * Copies text content to the system clipboard
+ * @param {string} text - The code to copy
+ */
+async function copyToClipboard(text) {
+    try {
+        // Use the modern Clipboard API
+        await navigator.clipboard.writeText(text);
+        
+        // Optional: Provide UI feedback
+        const activeBtn = document.activeElement;
+        if (activeBtn && activeBtn.tagName === "BUTTON") {
+            const originalText = activeBtn.textContent;
+            activeBtn.textContent = "Copied!";
+            activeBtn.style.backgroundColor = "#217346";
+            setTimeout(() => {
+                activeBtn.textContent = originalText;
+                activeBtn.style.backgroundColor = "#666";
+            }, 2000);
+        }
+    } catch (err) {
+        console.error("Failed to copy: ", err);
+        appendChat("Error", "Failed to copy to clipboard.");
+    }
+}
+// Make it globally accessible
+window.copyToClipboard = copyToClipboard;
 
 async function applyToExcel(code) {
     try {
@@ -275,5 +369,4 @@ async function applyToExcel(code) {
         appendChat("Error", "Could not apply to cell: " + error.message);
     }
 }
-
 window.applyToExcel = applyToExcel;

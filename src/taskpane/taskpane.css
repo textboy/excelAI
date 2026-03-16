@@ -1,80 +1,124 @@
-/* 
- * Copyright (c) Microsoft Corporation. All rights reserved. Licensed under the MIT license.
- * See LICENSE in the project root for license information.
- */
-
- html,
- body {
-     width: 100%;
-     height: 100%;
-     margin: 0;
-     padding: 0;
- }
- 
- ul {
-     margin: 0;
-     padding: 0;
- }
- 
- .ms-welcome__header {
-    padding: 20px;
-    padding-bottom: 30px;
-    padding-top: 100px;
-    display: -webkit-flex;
-    display: flex;
-    -webkit-flex-direction: column;
-    flex-direction: column;
-    align-items: center;
- }
-
- .ms-welcome__main {
-    display: -webkit-flex;
-    display: flex;
-    -webkit-flex-direction: column;
-    flex-direction: column;
-    -webkit-flex-wrap: nowrap;
-    flex-wrap: nowrap;
-    -webkit-align-items: center;
-    align-items: center;
-    -webkit-flex: 1 0 0;
-    flex: 1 0 0;
-    padding: 10px 20px;
- }
- 
- .ms-welcome__main > h2 {
-     width: 100%;
-     text-align: center;
- }
- 
- .ms-welcome__features {
-     list-style-type: none;
-     margin-top: 20px;
- }
- 
- .ms-welcome__features.ms-List .ms-ListItem {
-     padding-bottom: 20px;
-     display: -webkit-flex;
-     display: flex;
- }
- 
- .ms-welcome__features.ms-List .ms-ListItem > .ms-Icon {
-     margin-right: 10px;
- }
- 
- .ms-welcome__action.ms-Button--hero {
-     margin-top: 30px;
- }
- 
-.ms-Button.ms-Button--hero .ms-Button-label {
-  color: #0078d7;
+/* Basic Layout */
+body { 
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+    display: flex; 
+    flex-direction: column; 
+    height: 100vh; 
+    margin: 0; 
+    background-color: #fdfdfd;
 }
 
-.ms-Button.ms-Button--hero:hover .ms-Button-label,
-.ms-Button.ms-Button--hero:focus .ms-Button-label{
-  color: #005a9e;
-  cursor: pointer;
+#app-body {
+    display: flex; 
+    flex-direction: column; 
+    height: 100vh;
 }
 
-b {
-    font-weight: bold;
+header {
+    padding: 10px; 
+    border-bottom: 1px solid #ccc;
+    background-color: #fff;
+}
+
+/* Chat History Area */
+#chat-history { 
+    flex: 1; 
+    overflow-y: auto; 
+    padding: 15px; 
+    border-bottom: 1px solid #ccc; 
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Message Bubbles */
+.user { 
+    color: #005a9e; 
+    align-self: flex-end;
+    background: #e1f1ff;
+    padding: 8px 12px;
+    border-radius: 8px 8px 0 8px;
+    max-width: 85%;
+}
+
+.ai { 
+    color: #2b579a; 
+    align-self: flex-start;
+    background: #f3f3f3;
+    padding: 8px 12px;
+    border-radius: 8px 8px 8px 0;
+    max-width: 85%;
+    line-height: 1.4;
+}
+
+/* Thinking State */
+.thinking-mode {
+    color: #666;
+    font-style: italic;
+    font-size: 0.9em;
+    background: transparent;
+}
+
+/* Footer and Inputs */
+.footer { 
+    padding: 12px; 
+    background: #f3f3f3; 
+}
+
+#model-select {
+    width: 100%;
+    padding: 5px;
+    margin-bottom: 8px;
+}
+
+.input-area { 
+    display: flex; 
+    gap: 8px; 
+}
+
+#user-prompt { 
+    flex: 1; 
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+#send-btn {
+    padding: 8px 16px;
+    background-color: #2b579a;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+#send-btn:disabled {
+    background-color: #ccc;
+}
+
+/* Code Blocks & Buttons */
+.code-block-container {
+    background: #272822;
+    color: #f8f8f2;
+    padding: 10px;
+    border-radius: 4px;
+    margin-top: 8px;
+    position: relative;
+}
+
+pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.apply-btn {
+    margin-top: 5px;
+    background: #217346;
+    color: white;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.8em;
 }
