@@ -1,4 +1,9 @@
+import { Remarkable } from 'remarkable';
 console.log("taskpane.js loaded");
+
+// INIT GlOBAL EXCEL CONTEXT ---
+let chatContext = [];
+let cellContext = "";
 
 // Office.js initialization with better error handling
 function initializeOfficeApp() {
@@ -54,6 +59,7 @@ function setupEventHandlers(retryCount = 0) {
         // Set up event handlers
         sendBtn.onclick = sendToAI;
         newChatBtn.onclick = () => {
+            chatContext = [];
             if (chatHistory) {
                 chatHistory.innerHTML = "";
             }
@@ -125,19 +131,18 @@ async function sendToAI() {
         return;
     }
 
-    // --- NEW: FETCH EXCEL CONTEXT ---
-    let excelContext = "";
     try {
         await Excel.run(async (context) => {
             const range = context.workbook.getSelectedRange();
+            range.load("address");
             range.load("values"); // Load the data from the cells
             await context.sync();
             
+            const cellReference = range.address;
             // Convert 2D array of values into a readable string
             const values = range.values;
-            excelContext = values.map(row => row.join("\t")).join("\n");
-            console.log("--- DEBUG: Excel Context Data ---");
-            console.log(excelContext || "[Empty Selection]");
+            const cellValue = values.map(row => row.join("\t")).join("\n");
+            cellContext = `"cellReference":"${cellReference}","cellValue":"${cellValue}"`;
         });
     } catch (error) {
         console.warn("Could not read Excel selection:", error);
@@ -166,22 +171,46 @@ async function sendToAI() {
     thinkingFlag = true;
 
     const systemInstructions = `
-    You are an expert Microsoft Excel assistant with deep knowledge of formulas, functions, pivot tables, charts, macros, and data analysis.
-    You can provide easy to follow instructions for users.
-    You can generate Excel formulas, VBA scripts, and provide instructions for using Excel's features.
-    When giving formulas, ensure they are syntactically correct and optimized for performance.
-    - If providing an Excel formula, wrap it in \`\`\`excel blocks.
-    - If providing VBA code, wrap it in \`\`\`vba blocks.
-    - Priority for solutions: 
-    1. Standard Excel UI operations (Menus/Ribbon/Keyboard shortcuts).
+    You are an expert Microsoft Excel assistant.
+    - If user does not specify the solution approach, arrange solutions approach priority as below:
+    1. Standard Excel UI step-by-step but concise operations (Menus/Ribbon and corresponding Keyboard shortcuts).
     2. Excel Functions/Formulas.
-    3. VBA Scripts (only if the above cannot solve it).
+    3. VBA Scripts (only consider if the above cannot solve it).
+    4. Power Query M (only consider if the above cannot solve it).
+
+    - Response Constraints
+    1. Give response directly, no repeat on prompts.
+    2. Response involved 1-2 solution approaches, no more than 2.
+    3. Provide suggestion at the end of the response, if applicable.
+    4. No conclusion at the end of the response.
+    5. If the operations or Functions/Formulas approaches are provided, do NOT provide VBA Scripts solution approach.
+    6. If the operations or Functions/Formulas or VBA Scripts approaches are provided, do NOT provide Power Query M solution approach.
+    
+    - Additional Guidelines
+    1. For Excel Functions/Formulas or VBA scripts, explain how it works in concise bullet points.
+    2. Add Notes & variations in case it needs.
+    3. Test the functions/formulas/scripts first to ensure they're executable before providing.
+    4. Include office/excel version required for the solution.
+    
+    - Format of Responses
+    1. Use markdown format for responses.
+    2. Markdown start from heading level 3 ###.
+    3. If providing an Excel formula, wrap it in \`\`\`excel blocks.
+    4. If providing VBA code, wrap it in \`\`\`vba blocks.
+    5. If providing Power Query M, wrap it in \`\`\`M blocks.
+    6. For step-by-step operations, provide them in a numbered list.
     `;
     
     // Combine context and prompt
-    const fullPrompt = excelContext 
-        ? `Context from Excel sheet:\n${excelContext}\n\nUser Question: ${prompt}`
-        : `${prompt}`;
+    const promptWithCellContext = cellContext ? `{${cellContext}, "question":"${prompt}"}` : `{"question":"${prompt}"}`
+    const contextString = chatContext.length > 0 ? JSON.stringify(chatContext) : "";
+    const userPrompt = contextString 
+        ? `Context:\n{${contextString}}\n\nUserQuestion: ${promptWithCellContext}`
+        : `${promptWithCellContext}`;
+    console.log("--- DEBUG: Context (https://playcode.io/json-formatter) ---");
+    console.log(contextString || "[Empty Selection]");
+    console.log("--- DEBUG: UserQuestion ---");
+    console.log(promptWithCellContext || "[Empty Selection]");
 
     try {
         // CORRECTED URL
@@ -198,7 +227,7 @@ async function sendToAI() {
                 stream: true,  // Enable streaming responses
                 messages: [
                     { role: "system", content: systemInstructions },
-                    { role: "user", content: fullPrompt }
+                    { role: "user", content: userPrompt }
                 ]
             })
         });
@@ -245,6 +274,9 @@ async function sendToAI() {
         }
         // CALL 2: Final cleanup (processes Markdown and adds buttons)
         appendChat("AI", fullText, true);
+        
+        // memory for further chat
+        chatContext.push(`{"historyQuestion":"${promptWithCellContext}","historyResponse":"${fullText}"}`);
 
     } catch (error) {
         if (chatHistory.contains(thinkingMsg)) chatHistory.removeChild(thinkingMsg);
@@ -257,76 +289,43 @@ async function sendToAI() {
     }
 }
 
-/**
- * Combined chat function to handle user messages, AI streaming, and final rendering.
- * @param {string} role - "User", "AI", or "Error"
- * @param {string} text - The content to display
- * @param {boolean} isFinal - If true, applies Markdown formatting and "Add" buttons
- */
-function appendChat(role, text, isFinal = false) {
-    const chatHistory = document.getElementById("chat-history");
-    let msgDiv = chatHistory.querySelector(".ai.streaming-active");
-
-    // If it's a new message (User, Error, or start of AI response)
-    if (!msgDiv || role !== "AI") {
-        msgDiv = document.createElement("div");
-        msgDiv.className = role.toLowerCase();
-        if (role === "AI") msgDiv.classList.add("streaming-active");
-        chatHistory.appendChild(msgDiv);
+function codeToBase64(str) {
+    try { 
+        // 1. Convert string to UTF-8 bytes
+        const bytes = new TextEncoder().encode(str);
+        // 2. Convert bytes to a binary string
+        const binString = Array.from(bytes, (byte) => String.fromCharCode(byte)).join("");
+        // 3. Encode to Base64
+        const encodeCode = btoa(binString);
+        return encodeCode;
+    } catch (error) {
+        console.error("Encode Error:", error);
     }
+    return "";
+}
 
-    if (role === "User") {
-        msgDiv.innerHTML = `<strong>You:</strong> ${text}`;
-    } 
-    else if (role === "Error") {
-        msgDiv.innerHTML = `<strong>Error:</strong> <span style="color:red;">${text}</span>`;
-    } 
-    else if (role === "AI") {
-        if (!isFinal) {
-            // PROGRESSIVE STREAMING: Quick update with simple line breaks
-            msgDiv.innerHTML = `<strong>AI:</strong><br>${text.replace(/\n/g, '<br>')}`;
-        } else {
-            // FINAL RENDER: Apply Regex for code blocks and "Add" buttons
-            msgDiv.classList.remove("streaming-active");
-            
-            const codeBlockRegex = /```(?:([\w-]+))?\n?([\s\S]*?)```|`([^`\n]+)`/g;
-            
-            const formattedText = text.replace(codeBlockRegex, (match, lang, blockCode, inlineCode) => {
-                const code = (blockCode || inlineCode).trim();
-                const cleanCode = code.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-                const displayLang = lang || (code.startsWith('=') ? 'excel' : 'vba');
-
-                let actionButton = "";
-                if (displayLang === "vba") {
-                    // VBA Block: Show Copy Button
-                    actionButton = `<button class="apply-btn" style="background-color: #666;" onclick="copyToClipboard('${cleanCode}')">Copy VBA</button>`;
-                } else {
-                    // Excel/Formula Block: Show Add to Excel Button
-                    actionButton = `<button class="apply-btn" onclick="applyToExcel('${cleanCode}')">Add to Excel</button>`;
-                }
-
-                return `
-                    <div class="code-block-container">
-                        <div style="font-size:0.7em; color:#aaa; margin-bottom:4px; text-transform:uppercase;">${displayLang}</div>
-                        <pre><code>${code}</code></pre>
-                        ${actionButton}
-                    </div>`;
-            });
-            
-            msgDiv.innerHTML = `<strong>AI:</strong><br>${formattedText.replace(/\n/g, '<br>')}`;
-        }
+function codeFromBase64(base64Code) {
+    try {
+        // 1. Convert Base64 back to a binary string
+        const binString = atob(base64Code);
+        // 2. Convert the binary string into a byte array (Uint8Array)
+        const bytes = Uint8Array.from(binString, (char) => char.charCodeAt(0));
+        // 3. Decode the byte array back into a UTF-8 string
+        const decodedCode = new TextDecoder().decode(bytes);
+        return decodedCode;
+    } catch (error) {
+        console.error("Decode Error:", error);
     }
-
-    chatHistory.scrollTop = chatHistory.scrollHeight;
-    return msgDiv;
+    return "";
 }
 
 /**
  * Copies text content to the system clipboard
  * @param {string} text - The code to copy
  */
-async function copyToClipboard(text) {
+async function copyToClipboard(base64Code) {
     try {
+        const text = codeFromBase64(base64Code);
         // Use the modern Clipboard API
         await navigator.clipboard.writeText(text);
         
@@ -349,9 +348,10 @@ async function copyToClipboard(text) {
 // Make it globally accessible
 window.copyToClipboard = copyToClipboard;
 
-async function applyToExcel(code) {
+async function applyToExcel(base64Code) {
     try {
         await Excel.run(async (context) => {
+            const code = codeFromBase64(base64Code);
             const range = context.workbook.getSelectedRange();
             
             // If the code starts with '=', treat it as a formula, otherwise as text
@@ -370,3 +370,117 @@ async function applyToExcel(code) {
     }
 }
 window.applyToExcel = applyToExcel;
+
+// Helper function to generate code block HTML with action buttons
+function createCodeBlockHTML(code, lang) {
+    const language = lang || (code.startsWith('=') ? 'excel' : 'others');
+    const base64Code = codeToBase64(code);
+    
+    let actionButton = "";
+    if (language === "others") {
+        actionButton = `<button class="apply-btn copy-btn" style="background-color: #666;" data-code="${base64Code}">Copy</button>`;
+    } else {
+        // Use data attribute instead of inline onclick
+        actionButton = `<button class="apply-btn excel-btn" data-code="${base64Code}">Add to Excel</button>`;
+    }
+    
+    return `
+        <div class="code-block-container">
+            <div class="code-header" style="font-size:0.7em; color:#aaa; margin-bottom:4px; text-transform:uppercase; padding: 8px 10px;">
+                ${language}
+            </div>
+            <pre><code>${code}</code></pre>
+            <div class="code-actions" style="padding: 8px 10px;">
+                ${actionButton}
+            </div>
+        </div>`;
+}
+document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('copy-btn')) {
+        const base64Code = e.target.dataset.code;
+        copyToClipboard(base64Code);
+    } else if (e.target.classList.contains('excel-btn')) {
+        const base64Code = e.target.dataset.code;
+        applyToExcel(base64Code);
+    }
+});
+
+// Add helper function to format datetime
+function formatDateTime() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+// Initialize Remarkable once at module level
+const md = new Remarkable();
+// Declare thinkingFlag at global scope
+let thinkingFlag = false;
+
+/**
+ * chat function to handle user messages, AI streaming, and final rendering.
+ * @param {string} role - "User", "AI", or "Error"
+ * @param {string} text - The content to display
+ * @param {boolean} isFinal - If true, applies Markdown formatting and "Add" buttons
+ */
+function appendChat(role, text, isFinal = false) {
+    const chatHistory = document.getElementById("chat-history");
+    let msgDiv = chatHistory.querySelector(".ai.streaming-active");
+
+    // If it's a new message (User, Error, or start of AI response)
+    if (!msgDiv || role !== "AI") {
+        msgDiv = document.createElement("div");
+        msgDiv.className = role.toLowerCase();
+        if (role === "AI") msgDiv.classList.add("streaming-active");
+        chatHistory.appendChild(msgDiv);
+    }
+
+    if (role === "User") {
+        // Add datetime timestamp on top of user prompt
+        const dateTime = formatDateTime();
+        msgDiv.innerHTML = `
+            <span class="message-timestamp">${dateTime}</span>
+            <strong>You:</strong> ${text}
+        `;
+    } 
+    else if (role === "Error") {
+        msgDiv.innerHTML = `<strong>Error:</strong> <span style="color:red;">${text}</span>`;
+    } 
+    else if (role === "AI") {
+        if (!isFinal) {
+            // PROGRESSIVE STREAMING: Quick update with simple line breaks
+            msgDiv.innerHTML = `<strong>ExcelAI:</strong><br>${text.replace(/\n/g, '<br>')}`;
+        } else {
+            // FINAL RENDER: Use Remarkable.js for markdown formatting
+            msgDiv.classList.remove("streaming-active");
+            
+            // Custom renderer for code blocks to add buttons
+            const originalCodeBlock = md.renderer.rules.code_block;
+            const originalFence = md.renderer.rules.fence;
+
+            md.renderer.rules.code_block = function(tokens, idx, options, env, self) {
+                const code = tokens[idx].content;
+                const lang = tokens[idx].params;
+                return createCodeBlockHTML(code, lang);
+            };
+
+            md.renderer.rules.fence = function(tokens, idx, options, env, self) {
+                const code = tokens[idx].content;
+                const lang = tokens[idx].params;
+                return createCodeBlockHTML(code, lang);
+            };
+            
+            // Process markdown with Remarkable
+            const formattedText = md.render(text);
+            msgDiv.innerHTML = `<strong>ExcelAI:</strong><br>${formattedText}`;
+        }
+    }
+
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+    return msgDiv;
+}

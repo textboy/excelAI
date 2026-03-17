@@ -6,6 +6,7 @@ ExcelAI is a Microsoft Excel add-in that uses machine learning to manipulate you
 ```shell
 cd ExcelAI
 npm install dotenv --save-dev
+npm install remarkable --save
 ```
 
 ## Testing
@@ -19,11 +20,12 @@ npm start
 Put below text into column A1
 ```
 predict: 7,14,21,28,35
+may be: 17,41,12,82,53
 ```
 4. Select your preferred model
 5. Test prompt in ExcelAI
 ```
-in column B, extract 5 numbers at the end of column A's content, including comma. Then put those 5 numbers into column C to G.
+extract final 5 figures of the cells, put those 5 figures into column B to F separated by comma.
 ```
 6. Test result
 Refer to the screenshot [test result](sample/test_result.png)

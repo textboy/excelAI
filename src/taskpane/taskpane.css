@@ -122,3 +122,19 @@ pre {
     cursor: pointer;
     font-size: 0.8em;
 }
+
+/* override markdown styles to reduce indent */
+.ai ol {
+    padding-inline-start: 20px;
+}
+.ai ul {
+    padding-inline-start: 20px;
+}
+
+/* timestamp styles */
+.message-timestamp {
+    font-size: 0.7em;
+    color: #888;
+    margin-bottom: 4px;
+    display: block;
+}
