@@ -47,7 +47,6 @@ header {
     background: #f3f3f3;
     padding: 8px 12px;
     border-radius: 8px 8px 8px 0;
-    max-width: 85%;
     line-height: 1.4;
 }
 
@@ -65,10 +64,18 @@ header {
     background: #f3f3f3; 
 }
 
+#new-chat {
+    padding-right: 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
 #model-select {
     width: 100%;
     padding: 5px;
     margin-bottom: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
 }
 
 .input-area { 
